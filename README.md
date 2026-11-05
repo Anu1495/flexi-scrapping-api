@@ -82,6 +82,35 @@ gunicorn --bind=0.0.0.0:8000 --timeout 600 -k uvicorn.workers.UvicornWorker app.
 
 After deployment, the endpoint is `https://<your-app-name>.azurewebsites.net/api/v1/sheets/data`; interactive docs are at `/docs`.
 
+### GitHub Actions: Azure login reports “No subscriptions found”
+
+If `deploy` fails in `azure/login@v2` with `No subscriptions found`, deployment has not started. The configured identity cannot see an accessible Azure subscription. Check the identity's Azure role assignments, subscription status, and repository secrets; changing application code or retrying without correcting access will not resolve this failure.
+
+The workflow `.github/workflows/master_flexi-rates-api.yml` uses these repository Actions secrets:
+
+| Secret | Required value |
+| --- | --- |
+| `AZUREAPPSERVICE_CLIENTID_17DE7FBA42634A5990ED9D6351F0E044` | Application (client) ID of the deployment service principal |
+| `AZUREAPPSERVICE_TENANTID_15C11B66DEEA466B9473224F447604DA` | Directory (tenant) ID containing that service principal and subscription |
+| `AZUREAPPSERVICE_SUBSCRIPTIONID_B33BAF200A6A42EF95AF2BEF92BFBE91` | Active subscription ID containing `flexi-rates-api` |
+
+An Azure administrator with permission to assign roles at the app's scope can grant the deployment service principal **Website Contributor** on the target App Service. In Azure Cloud Shell (Bash), signed into the target tenant as that administrator, replace the placeholders and run:
+
+```bash
+az account set --subscription '<subscription-id>' &&
+app_scope=$(az webapp show --resource-group '<resource-group>' --name flexi-rates-api --query id --output tsv) &&
+principal_id=$(az ad sp show --id '<application-client-id>' --query id --output tsv) &&
+az role assignment create \
+  --assignee-object-id "$principal_id" \
+  --assignee-principal-type ServicePrincipal \
+  --role 'Website Contributor' \
+  --scope "$app_scope"
+```
+
+Use the service principal's object ID, not the app registration's object ID. Prefer this app-scoped role over subscription-wide Contributor access. If the secrets refer to the wrong identity, tenant, or subscription, correct them in **Settings → Secrets and variables → Actions** instead.
+
+Keep the workflow's `id-token: write` permission and OIDC login. Do not set `allow-no-subscriptions: true`: App Service deployment needs subscription access, so that option would only defer the failure. Once access changes have propagated, rerun the failed workflow from the Actions tab. These Azure access changes must be applied outside this repository.
+
 ## Notes
 
 - The integration requests read-only Sheets permissions.
