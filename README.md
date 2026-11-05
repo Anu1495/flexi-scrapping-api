@@ -52,7 +52,8 @@ From the project directory:
 5. Try these URLs:
 
    - `http://127.0.0.1:8000/api/v1/health` — health check
-   - `http://127.0.0.1:8000/api/v1/sheets/data` — sheet rows as JSON
+   - `http://127.0.0.1:8000/api/v1/sheets/data` — all sheet rows as JSON
+   - `http://127.0.0.1:8000/api/v1/sheets/data?checkin_date=2026-11-05` — rows for November 5, 2026 (blank Date cells continue the preceding date group)
    - `http://127.0.0.1:8000/docs` — interactive API documentation
 
 Example response:
@@ -80,7 +81,7 @@ Set the App Service startup command to:
 gunicorn --bind=0.0.0.0:8000 --timeout 600 -k uvicorn.workers.UvicornWorker app.main:app
 ```
 
-After deployment, the endpoint is `https://<your-app-name>.azurewebsites.net/api/v1/sheets/data`; interactive docs are at `/docs`.
+After deployment, the endpoint is `https://<your-app-name>.azurewebsites.net/api/v1/sheets/data`; add `?checkin_date=YYYY-MM-DD` to filter by the `Date` column. Interactive docs are at `/docs`.
 
 ### GitHub Actions: Azure login reports “No subscriptions found”
 
