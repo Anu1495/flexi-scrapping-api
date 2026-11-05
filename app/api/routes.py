@@ -1,7 +1,8 @@
 import json
 import logging
+from datetime import date
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from googleapiclient.errors import HttpError
 
 from app.core.config import get_settings
@@ -17,11 +18,16 @@ def health_check() -> dict[str, str]:
 
 
 @router.get("/sheets/data", tags=["sheets"])
-def read_sheet_data() -> list[dict[str, str]]:
+def read_sheet_data(
+    checkin_date: date | None = Query(
+        default=None,
+        description="Optional check-in date filter in YYYY-MM-DD format, matched against the Date column.",
+    ),
+) -> list[dict[str, str]]:
     """Return configured Google Sheets rows as objects keyed by column headers."""
     settings = get_settings()
     try:
-        return GoogleSheetsService(settings).read_records()
+        records = GoogleSheetsService(settings).read_records()
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except HttpError as exc:
@@ -45,3 +51,25 @@ def read_sheet_data() -> list[dict[str, str]]:
             status_code=502,
             detail="Google Sheets could not complete the request. Check the spreadsheet ID, range, sharing, and API settings.",
         ) from exc
+
+    if checkin_date is None:
+        return records
+
+    date_column = next(
+        (column for row in records for column in row if column.strip().casefold() == "date"),
+        None,
+    )
+    if date_column is None:
+        raise HTTPException(status_code=502, detail="The configured worksheet does not contain a Date column.")
+
+    requested_date = checkin_date.isoformat()
+    matching_records: list[dict[str, str]] = []
+    current_sheet_date = ""
+    for row in records:
+        row_date = row.get(date_column, "").strip()
+        if row_date:
+            current_sheet_date = row_date[:10]
+        if current_sheet_date == requested_date:
+            matching_records.append(row)
+
+    return matching_records
