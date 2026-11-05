@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+api-deploy.zip
+.pytest_cache/
+.coverage
+htmlcov/
+google_service_account.json

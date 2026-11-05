@@ -1,0 +1,27 @@
+import os
+from dataclasses import dataclass
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+@dataclass(frozen=True)
+class Settings:
+    spreadsheet_id: str
+    sheet_range: str
+    service_account_file: str
+    service_account_json: str
+
+
+def get_settings() -> Settings:
+    return Settings(
+        spreadsheet_id=os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID", "").strip(),
+        sheet_range=os.getenv("GOOGLE_SHEETS_RANGE", "Sheet1!A:Z").strip(),
+        service_account_file=os.getenv(
+            "GOOGLE_SERVICE_ACCOUNT_FILE",
+            str(Path(__file__).resolve().parents[2] / "google_service_account.json"),
+        ),
+        service_account_json=os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip(),
+    )
