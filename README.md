@@ -1,13 +1,14 @@
 # Google Sheets Read API
 
-A small FastAPI service that reads a worksheet range and returns each data row as a JSON object. The first row in the configured range is treated as the column headers.
+A small FastAPI service that reads data from one of several hotel Google Sheets and returns each data row as a JSON object. The first row in the selected tab is treated as the column headers.
 
 ## Project layout
 
 ```text
 app/
   api/routes.py          HTTP endpoints
-  core/config.py         Environment-based settings
+   core/config.py         Credential settings
+   core/hotels.py         Hotel scrape IDs and Google Sheet mappings
   services/sheets.py     Google Sheets API integration
   main.py                FastAPI application
 .env.example             Local settings template
@@ -20,9 +21,16 @@ requirements.txt         Python dependencies
 2. Open `google_service_account.json` locally and copy the `client_email` value (do not share the file or commit it).
 3. Share the target spreadsheet with that service-account email, with Viewer access.
 4. Copy the spreadsheet ID from its URL. For a URL like `https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit`, the ID is the portion between `/d/` and `/edit`.
-5. Set `GOOGLE_SHEETS_SPREADSHEET_ID` and `GOOGLE_SHEETS_RANGE` in `.env`. The range accepts A1 notation, for example `Sheet1!A:Z` or `'Sales Data'!A1:F500`. If you only know the worksheet's numeric `gid` from its URL, use `gid=1051183713!A:Z`; the service resolves the tab name automatically.
+5. The supported hotels and tabs are registered in `app/core/hotels.py`. The API reads columns A:Z from each configured tab, using its `gid` from the URL to locate the tab.
 
-The service account file already in the project root is used by default for local development. It is ignored by Git. Never commit or publish it.
+Share each of the four spreadsheets with the service-account `client_email` as a Viewer. The service account file in the project root is used by default for local development. It is ignored by Git. Never commit or publish it.
+
+| Hotel | Short form | `scrape_id` |
+| --- | --- | ---: |
+| Indigo London Paddington | HILP | 4 |
+| Mercure London Paddington | MLP | 3 |
+| Mercure London Hyde Park | MLHP | 6 |
+| Holiday Inn Leicester Wigston | HILW | 7 |
 
 ## Run locally (Windows PowerShell)
 
@@ -52,25 +60,40 @@ From the project directory:
 5. Try these URLs:
 
    - `http://127.0.0.1:8000/api/v1/health` — health check
-   - `http://127.0.0.1:8000/api/v1/sheets/data` — all sheet rows as JSON
-   - `http://127.0.0.1:8000/api/v1/sheets/data?checkin_date=2026-11-05` — rows for November 5, 2026 (blank Date cells continue the preceding date group)
+   - `http://127.0.0.1:8000/api/v1/sheets/data?scrape_id=4` — all rate records for Indigo London Paddington
+   - `http://127.0.0.1:8000/api/v1/sheets/data?scrape_id=3&checkin_date=2026-11-05` — rate records for Mercure London Paddington on November 5, 2026 (blank Date cells continue the preceding date group)
+   - `http://127.0.0.1:8000/api/v1/sheets/data?scrape_id=6` — all rows for Mercure London Hyde Park
+   - `http://127.0.0.1:8000/api/v1/sheets/data?scrape_id=7` — all rows for Holiday Inn Leicester Wigston
    - `http://127.0.0.1:8000/docs` — interactive API documentation
 
-Example response:
+Each sheet row is converted to the API's rate-record shape. `timeStamp` is the UTC response-generation time, `price` and `availability` are numeric when present, and meal/refund flags are derived from `Rate Type`.
 
 ```json
 [
-  {"Name": "Ada", "Email": "ada@example.com"},
-  {"Name": "Grace", "Email": "grace@example.com"}
+   {
+      "checkIn": "2026-11-05",
+      "timeStamp": "2026-11-06T12:30:00Z",
+      "source": null,
+      "ratePlanCode": null,
+      "roomType": "1 Queen Premium with Private Patio",
+      "price": 256,
+      "adults": 2,
+      "children": 0,
+      "infants": 0,
+      "refundable": false,
+      "breakfast": false,
+      "lunch": false,
+      "dinner": false,
+      "nights": 1,
+      "availability": 0
+   }
 ]
 ```
 
 ## Deploy to Azure App Service
 
-Create an App Service using a supported Python runtime, deploy this project directory, and set these App Service **Configuration → Application settings**:
+Create an App Service using a supported Python runtime, deploy this project directory, and set this App Service **Configuration → Application setting**:
 
-- `GOOGLE_SHEETS_SPREADSHEET_ID`: spreadsheet ID
-- `GOOGLE_SHEETS_RANGE`: range such as `Sheet1!A:Z`
 - `GOOGLE_SERVICE_ACCOUNT_JSON`: the complete contents of the service-account JSON file
 
 App Service application settings are provided to the process as environment variables. Keep the credential setting secret, restrict access to the Azure resource, and do not upload the JSON key file with the deployment. For production, prefer storing credentials in Azure Key Vault and using managed references where available.
@@ -81,7 +104,7 @@ Set the App Service startup command to:
 gunicorn --bind=0.0.0.0:8000 --timeout 600 -k uvicorn.workers.UvicornWorker app.main:app
 ```
 
-After deployment, the endpoint is `https://<your-app-name>.azurewebsites.net/api/v1/sheets/data`; add `?checkin_date=YYYY-MM-DD` to filter by the `Date` column. Interactive docs are at `/docs`.
+After deploying the updated code, request `https://<your-app-name>.azurewebsites.net/api/v1/sheets/data?scrape_id=4`; use `scrape_id=3`, `6`, or `7` for the other hotels. Add `&checkin_date=YYYY-MM-DD` to filter that hotel's transformed records by the `Date` column. Interactive docs are at `/docs`.
 
 ### GitHub Actions: Azure login reports “No subscriptions found”
 
@@ -115,5 +138,8 @@ Keep the workflow's `id-token: write` permission and OIDC login. Do not set `all
 ## Notes
 
 - The integration requests read-only Sheets permissions.
+- `scrape_id` is required. Supported values are `3`, `4`, `6`, and `7`; other values receive HTTP 400.
+- Required sheet columns are `Date`, `Room Type`, `Rate`, `Rate Type`, and `Availability`. Rows with a blank `Date` inherit the preceding nonblank date, matching the sheet's grouped-date layout.
+- `refundable` is true for `Refundable` and `Refundable with Breakfast`; `breakfast` is true for `Non-Refundable with Breakfast` and `Refundable with Breakfast`.
 - The first row is used for JSON property names. Empty headers become `column_1`, `column_2`, etc.; repeated headers get numeric suffixes.
 - The data endpoint currently has no caller authentication. Add Azure App Service Authentication or API authentication before exposing sensitive sheet data publicly.

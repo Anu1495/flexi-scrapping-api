@@ -6,6 +6,7 @@ venv/
 .env.*
 !.env.example
 api-deploy.zip
+.vscode/settings.json
 .pytest_cache/
 .coverage
 htmlcov/
