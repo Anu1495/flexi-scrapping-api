@@ -7,20 +7,17 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
 from app.core.config import Settings
+from app.core.hotels import HotelSheet
 
 SHEETS_READONLY_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly"
 
 
 class GoogleSheetsService:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, hotel: HotelSheet) -> None:
         self.settings = settings
+        self.hotel = hotel
 
     def read_records(self) -> list[dict[str, str]]:
-        if not self.settings.spreadsheet_id:
-            raise ValueError("Set GOOGLE_SHEETS_SPREADSHEET_ID to the spreadsheet ID.")
-        if not self.settings.sheet_range:
-            raise ValueError("Set GOOGLE_SHEETS_RANGE to the worksheet and cells to read.")
-
         credentials = self._get_credentials()
         sheets_api = build("sheets", "v4", credentials=credentials, cache_discovery=False)
         sheet_range = self._resolve_range(sheets_api)
@@ -28,7 +25,7 @@ class GoogleSheetsService:
             sheets_api.spreadsheets()
             .values()
             .get(
-                spreadsheetId=self.settings.spreadsheet_id,
+                spreadsheetId=self.hotel.spreadsheet_id,
                 range=sheet_range,
             )
             .execute()
@@ -50,16 +47,16 @@ class GoogleSheetsService:
         return records
 
     def _resolve_range(self, sheets_api: Any) -> str:
-        gid_range = re.fullmatch(r"gid=(\d+)!([^!]+)", self.settings.sheet_range)
+        gid_range = re.fullmatch(r"gid=(\d+)!([^!]+)", self.hotel.sheet_range)
         if not gid_range:
-            return self.settings.sheet_range
+            return self.hotel.sheet_range
 
         sheet_id = int(gid_range.group(1))
         cell_range = gid_range.group(2)
         metadata = (
             sheets_api.spreadsheets()
             .get(
-                spreadsheetId=self.settings.spreadsheet_id,
+                spreadsheetId=self.hotel.spreadsheet_id,
                 fields="sheets(properties(sheetId,title))",
             )
             .execute()
